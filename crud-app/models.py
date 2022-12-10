@@ -8,3 +8,4 @@ class Message(Base):
     id = Column(Integer, primary_key=True)
     text = Column(String(1000))
     user = Column(String(256))
+    timestamp = Column(Integer)

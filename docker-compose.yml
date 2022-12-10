@@ -1,0 +1,14 @@
+version: "3.8"
+services:
+  db:
+    build: ./crud-app/
+    ports:
+      - "8000:8000"
+  peer:
+    build: ./
+    ports:
+      - ":5000"
+    volumes:
+      - ./src:/app/src
+      - ./Cargo.toml:/app/Cargo.toml
+    command: ["cargo", "run", "--bin", "test"]
