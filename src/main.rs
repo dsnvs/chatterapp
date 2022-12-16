@@ -1,33 +1,38 @@
 use futures::{prelude::*};
-use libp2p::floodsub::{self, FloodsubEvent, Topic};
-use libp2p::request_response::{RequestResponseEvent, RequestResponse};
+
 use libp2p::{
+    floodsub::{self, FloodsubEvent},
     identity, mdns,
     swarm::{SwarmEvent},
     mplex, tcp,
     noise,
     core::upgrade,
-};
-use libp2p::{
     Transport, PeerId, Swarm,
-    request_response::RequestResponseMessage,
 };
-use std::error::Error;
+use std::{error::Error, hash::Hash, collections::HashMap};
 use tokio::io::{self, AsyncBufReadExt};
-use std::time::SystemTime;
 
 use crate::p2p::{MyBehaviour,};
-use crate::logic::Lamport;
+use crate::logic::{Lamport, MessageType, LamportMessage};
+use crate::logic::Message as CustomMessage;
 
 mod logic;
 mod p2p;
 mod generic;
+
+enum ConnectionStatus {
+    CONNECTED,
+    DISCONNECTED
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // Create a random key for ourselves.
     let local_key = identity::Keypair::generate_ed25519();
     let local_peer_id = PeerId::from(local_key.public());
+
+    let mut peer_map = HashMap::new();
+
 
     // Lamport 
     // let lamport = Lamport::new();
@@ -51,11 +56,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Create a swarm using the transport and behaviour specified previously
     let mut swarm = Swarm::with_tokio_executor(transport, behaviour, local_peer_id);
 
-    let lamport = floodsub::Topic::new("lamport");
-    let mutex = floodsub::Topic::new("mutex");
+    let lamport = floodsub::Topic::new("comms");
 
     swarm.behaviour_mut().floodsub.subscribe(lamport.clone());
-    swarm.behaviour_mut().floodsub.subscribe(mutex.clone());
 
     // Read full lines from stdin
     let mut stdin = io::BufReader::new(io::stdin()).lines();
@@ -68,7 +71,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
         tokio::select! {
             line = stdin.next_line() => {
                 let line = line?.expect("stdin closed");
-                swarm.behaviour_mut().floodsub.publish(lamport.clone(), line.as_bytes());
+                let message_data = bincode::serialize("Test message").unwrap();
+                let mut args = line.split(' ');
+                let test_message = match args.next() {
+                    Some("A") => {
+                        CustomMessage::new(MessageType::LamportMessage(LamportMessage::GenericTransaction),
+                            Some(local_peer_id),
+                            local_peer_id,
+                            message_data,
+                        )
+                    },
+                    (_) => {
+                        CustomMessage::new(MessageType::LamportMessage(LamportMessage::GenericTransaction),
+                        None,
+                        local_peer_id,
+                        message_data,
+                        )
+                    }
+                };
+                
+                swarm.behaviour_mut().floodsub.publish(lamport.clone(), test_message.as_bytes());
             }
             event = swarm.select_next_some() => match event {
                 SwarmEvent::NewListenAddr { address, .. } => {
@@ -77,32 +99,59 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 SwarmEvent::Behaviour(p2p::MyBehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
                     for (peer_id, multiaddr) in list {
                         println!("discovered {peer_id} {multiaddr}");
-                        swarm.behaviour_mut().kademlia.add_address(&peer_id, multiaddr.clone());
-                        swarm.behaviour_mut().generic_request_response.add_address(&peer_id, multiaddr);
                         swarm.behaviour_mut().floodsub.add_node_to_partial_view(peer_id);
+                        peer_map.insert(peer_id, ConnectionStatus::CONNECTED);
                     }
                 },
                 SwarmEvent::Behaviour(p2p::MyBehaviourEvent::Floodsub(FloodsubEvent::Message(message))) => {
-                    println!("{:?} sent '{:?}'", message.source, String::from_utf8_lossy(&message.data));
+                    println!("Received message from {:?}", message.source);
+                    handle_overlay_protocol(local_peer_id, &message.data);
                 }
-                SwarmEvent::Behaviour(p2p::MyBehaviourEvent::RequestResponse(RequestResponseEvent::Message {
-                    peer: _,
-                    message:
-                        RequestResponseMessage::Request {
-                            request, channel, ..
-                        },
-                })) => {
-
-                    // TEST CODE
-                    let req: String = bincode::deserialize(&request).unwrap();
-                    println!("Received: {:?}", req);
-                    
-                    let response = 5;
-                    swarm.behaviour_mut().generic_request_response.send_response(channel, bincode::serialize(&response).unwrap());
-                    // TEST CODE
-                },
                 _ => {}
             }
         }
     }
+}
+
+
+fn handle_overlay_protocol(peer_id: PeerId, serialized_message: &[u8]) {
+    let message: CustomMessage = bincode::deserialize(serialized_message).unwrap();
+
+    if message.to.is_some() && message.to.unwrap() != peer_id {
+        println!("I am not the recipient");
+        return
+    }
+
+    match message.message_type {
+        MessageType::LamportMessage(message_type) => match message_type {
+            LamportMessage::GenericTransaction => {
+                println!("Handler TESTRPC")
+            }
+            LamportMessage::GenericTransaction2 => todo!(),
+        },
+        MessageType::MutexMessage(_) => todo!(),
+        MessageType::DistributedConsensusMessage(_) => todo!(),
+    }
+}
+
+fn input_handling(local_peer_id: PeerId, line: String) -> CustomMessage {
+    // let message_data = bincode::serialize("Test message").unwrap();
+    let mut args = line.split(' ');
+    
+    let test_message = match args.next() {
+        Some("A") => {
+            return CustomMessage::new(MessageType::LamportMessage(LamportMessage::GenericTransaction),
+                Some(local_peer_id2),
+                local_peer_id,
+                message_data,
+            )
+        },
+        (_) => {
+            return CustomMessage::new(MessageType::LamportMessage(LamportMessage::GenericTransaction),
+            None,
+            local_peer_id,
+            message_data,
+            )
+        }
+    };
 }

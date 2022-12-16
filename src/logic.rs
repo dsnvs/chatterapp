@@ -31,14 +31,14 @@ impl Error for SyncError {
 type Timestamp = u64;
 
 // Dummy transaction
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct LamportTransaction {
     content: String,
     timestamp: Timestamp
 }
 
 // Lamport timestamp object
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct Lamport {
     timestamp: Timestamp
 }
@@ -79,6 +79,9 @@ impl Lamport {
 
     Message handling should be implemented as:
         Deserialize
+        If Some(Message.to) && Message.to != Self.PeerId {
+            return
+        }
         Match Message_Type
             Message_Type<Message_Type> => {
                 HANDLING FOR THIS MESSAGE_TYPE
@@ -95,23 +98,23 @@ impl Lamport {
             }
 */
 
-#[derive(Serialize, Deserialize)]
-enum MessageType {
+#[derive(Serialize, Deserialize, Clone)]
+pub enum MessageType {
     LamportMessage(LamportMessage),
     MutexMessage(MutexMessage),
     DistributedConsensusMessage(DistributedConsensusMessage)
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Message {
-    message_type: MessageType,
-    to: Option<PeerId>,
-    from: PeerId,
-    data: String,
+    pub message_type: MessageType,
+    pub to: Option<PeerId>,
+    pub from: PeerId,
+    pub data: Vec<u8>,
 }
 
 impl Message {
-    fn new(message_type: MessageType, to: Option<PeerId>, from: PeerId, data: String) -> Self {
+    pub fn new(message_type: MessageType, to: Option<PeerId>, from: PeerId, data: Vec<u8>) -> Self {
         Self {
             message_type,
             to,
@@ -119,22 +122,30 @@ impl Message {
             data,
         }
     }
+    
+    pub fn as_bytes(&self) -> Vec<u8> {
+        bincode::serialize(self).unwrap()
+    }
+/* This is broken
+
+    pub fn from_bytes(serialized: &[u8]) -> Message {
+        bincode::deserialize(serialized).unwrap()
+    }
+*/
 }
-#[derive(Serialize, Deserialize)]
-enum LamportMessage {
-    TESTRPC
+
+#[derive(Serialize, Deserialize, Clone)]
+pub enum LamportMessage {
+    GenericTransaction,
+    GenericTransaction2,
 }
-#[derive(Serialize, Deserialize)]
-enum MutexMessage {
+#[derive(Serialize, Deserialize, Clone)]
+pub enum MutexMessage {
 
 }
-#[derive(Serialize, Deserialize)]
-enum DistributedConsensusMessage {
+#[derive(Serialize, Deserialize, Clone)]
+pub enum DistributedConsensusMessage {
     
 }
 
-
-
-/* fn test_function() {
-    let message = Message::new(MessageType::LamportMessage(LamportMessage::TESTRPC), None, PeerId::random(), "Test Data".to_string());
-} */
+// This is a hashmap for a list of peers
