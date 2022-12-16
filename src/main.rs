@@ -135,13 +135,13 @@ fn handle_overlay_protocol(peer_id: PeerId, serialized_message: &[u8]) {
 }
 
 fn input_handling(local_peer_id: PeerId, line: String) -> CustomMessage {
-    // let message_data = bincode::serialize("Test message").unwrap();
+    let message_data = bincode::serialize("Test message").unwrap();
     let mut args = line.split(' ');
     
     let test_message = match args.next() {
         Some("A") => {
             return CustomMessage::new(MessageType::LamportMessage(LamportMessage::GenericTransaction),
-                Some(local_peer_id2),
+                Some(local_peer_id),
                 local_peer_id,
                 message_data,
             )
